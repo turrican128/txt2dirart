@@ -18,6 +18,10 @@ $ txt2dirart game.d64 --from-text art.txt -o release.d64
 
 The listing draws a picture. The files still load.
 
+And on the actual machine — this is `examples.d64`, which ships with the release:
+
+![The directory of examples.d64 listed on a C64](docs/listing-on-a-c64.png)
+
 ---
 
 ## Contents
@@ -272,6 +276,16 @@ This is the only check that shows you the actual PETSCII glyphs. Do it once befo
 ```
 LOAD"CRACKTRO",8,1
 ```
+
+![The demo program running](docs/demo-running.png)
+
+This repo automates both checks against `examples.d64`:
+
+```sh
+python tools/capture_screens.py      # needs x64sc (VICE) on PATH
+```
+
+It writes `docs/listing-on-a-c64.png` and `docs/demo-running.png`. Two gotchas are baked into that script, since both cost an afternoon: VICE's `-keybuf` wants **lowercase** ASCII (uppercase arrives as PETSCII `$C1`–`$DA`, which are graphics characters in the boot charset, and the screen fills with garbage that looks like a disk fault), and the line terminator must be `\n` — a `\r` is typed but never submits.
 
 ## How it works
 

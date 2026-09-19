@@ -35,6 +35,9 @@ jobs:
         # The release binaries bundle nothing but the stdlib, so a stdlib-only
         # run is the thing that actually has to work. pytest is a test-time
         # dependency, not a runtime one, and this step proves it.
+        # shell: bash everywhere -- the default on Windows runners is
+        # PowerShell, which does not understand a backslash continuation.
+        shell: bash
         run: |
           python txt2dirart.py --version
           python txt2dirart.py tests/fixtures/three_files.d64 \
