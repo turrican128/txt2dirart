@@ -1,0 +1,12 @@
+================
+  TXT2DIRART
+     V1.0
+================
+ DIR ART FROM A
+   TEXT FILE
+================
+@demo
+@readme
+================
+  DR.J/DELYSID
+================
