@@ -38,9 +38,31 @@ jobs:
         run: python -m pytest tests/ -q
 
       - name: build single-file binary
+        # The tool imports argparse, os and sys. Nothing else. Left to itself
+        # PyInstaller still bundles most of the stdlib, which put the Linux
+        # binary at 16.5 MB for a 500-line script -- eight times the size of
+        # the whole png2prg download. Stripping symbols and excluding the
+        # modules we provably never import takes it to about a third of that.
+        #
+        # An over-aggressive exclude list produces a binary that builds fine
+        # and dies at startup, which is why the smoke test below is not
+        # optional. If you add an import to txt2dirart.py, check it is not on
+        # this list.
         run: >
           pyinstaller --onefile --name txt2dirart
-          --console --noupx
+          --console --noupx --strip
+          --exclude-module tkinter --exclude-module unittest
+          --exclude-module email --exclude-module http
+          --exclude-module xml --exclude-module xmlrpc
+          --exclude-module pydoc --exclude-module doctest
+          --exclude-module pdb --exclude-module sqlite3
+          --exclude-module ssl --exclude-module hashlib
+          --exclude-module lzma --exclude-module bz2
+          --exclude-module socket --exclude-module multiprocessing
+          --exclude-module asyncio --exclude-module logging
+          --exclude-module pickle --exclude-module json
+          --exclude-module csv --exclude-module decimal
+          --exclude-module datetime --exclude-module calendar
           txt2dirart.py
 
       - name: the binary must actually run
@@ -103,6 +125,10 @@ jobs:
         with:
           name: txt2dirart ${{ env.VERSION }}
           body_path: CHANGELOG.md
+          # A tag with a suffix (v0.9.0-rc1, v1.0-beta) is a trial run, not a
+          # release. Without this it publishes as the repo's latest release and
+          # anyone landing on the page downloads a release candidate.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             ${{ env.ZIP }}
             examples.d64
