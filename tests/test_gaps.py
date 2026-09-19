@@ -176,7 +176,7 @@ def test_quiet_suppresses_progress_but_not_errors(three_files, art_file, tmp_pat
 
     bad = run_tool(three_files, "--from-text", art_file("@nope\n"),
                    "-o", tmp_path / "o2.d64", "--quiet", expect_ok=False)
-    assert "matches no file" in (bad.stdout + bad.stderr)
+    assert "match no file" in (bad.stdout + bad.stderr)
 
 
 def test_a_failed_run_leaves_no_half_written_image(three_files, art_file, tmp_path, run_tool):

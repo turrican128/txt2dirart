@@ -25,3 +25,16 @@ First public release.
   `--in-place`.
 - `d64nice.exe` is no longer needed for art using the long-line PETSCII
   characters; use `\xNN` instead.
+
+## Unreleased
+
+- Every bad `@token` is now reported in one run, with the disk's actual file
+  names and a note that tokens are disk-specific. Previously only the first
+  bad name was shown, so fixing an art file written for a different disk cost
+  one run per mistake. Found by Alex testing against a real disk.
+- Naming a file more times than the disk has copies of it is now an error
+  instead of one placement silently vanishing.
+- Errors no longer jump ahead of the progress output when stdout is piped.
+- Release binaries are stripped and exclude unused stdlib modules: the Windows
+  build drops from 8.0 MB to 5.0 MB.
+- Tags with a suffix (`v0.9.0-rc1`) publish as prereleases.

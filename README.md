@@ -170,8 +170,19 @@ gives
 
 Notes:
 
+- **A token names a file on the disk you are stamping.** Art written for one disk will not run against another without renaming its tokens — that is the single most common thing to trip over, including with the files in `art-examples/`, whose tokens name files on the test disk.
 - Tokens are **case-insensitive**. `@cracktro`, `@CRACKTRO` and `@CrAcKtRo` are the same.
-- A token naming a file that is not on the disk is an **error**, and the message lists what *is* on the disk. A silent miss would mean shipping a listing with a hole in it.
+- A token naming a file that is not on the disk is an **error**, and **every** bad token is reported at once, together with what *is* on the disk:
+
+  ```
+  !! 2 token(s) match no file on the disk: @CRACKTRO, @HRTRAINER
+     the disk contains: TCOM-10
+     a token names a file on THIS disk, so art written for another disk needs
+     its tokens renamed
+  ```
+
+  Nothing is written when it stops like this. A silent miss would mean shipping a listing with a hole in it.
+- Naming a file **more times** than the disk has copies of it is also an error, rather than one of them silently vanishing.
 - Any real file you do **not** name is appended at the end, and the tool says so. A typo in your art can never drop a file off the disk.
 - Use no tokens at all and you get art-then-files (or `--file-first` for files-then-art).
 
