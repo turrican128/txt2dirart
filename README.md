@@ -75,7 +75,7 @@ txt2dirart              Linux x64
 
 Drop it anywhere on your `PATH`.
 
-**From source** — any Python 3.8 or newer, no packages required:
+**From source** — any Python 3.9 or newer, no packages required:
 
 ```
 python txt2dirart.py game.d64 --from-text art.txt -o release.d64

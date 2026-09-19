@@ -5,8 +5,19 @@ The point of this disk is that you do not have to install anything to see
 what the tool does: attach it, LIST it, and the directory itself is the
 demonstration. LOAD"DEMO",8 and RUN proves the files still work.
 
-    python tools/make_examples.py                 # needs c1541 on PATH
-    python tools/make_examples.py --c1541 PATH
+    python tools/make_examples.py                 # stamp the committed base
+    python tools/make_examples.py --rebuild-base  # re-master it (needs c1541)
+
+Two stages, deliberately split:
+
+  1. MASTER  format a disk and write the BASIC demos onto it. Needs c1541,
+             so the result is committed as tools/examples-base.d64 and only
+             rebuilt when the demo programs change.
+  2. STAMP   put the art on it. Pure Python, no dependencies.
+
+Splitting them is what lets CI verify the shipped examples.d64 is current
+without installing an emulator: it re-runs stage 2 and diffs. A committed
+binary that nothing checks drifts out of date silently.
 
 Output: examples.d64 in the repo root.
 """
@@ -31,6 +42,12 @@ BASIC_LINES = [
     (40, '?""'),
     (50, '?"THE LISTING YOU JUST SAW"'),
     (60, '?"IS WHAT THIS TOOL MAKES."'),
+]
+
+README_LINES = [
+    (10, '?"TXT2DIRART"'),
+    (20, '?"GITHUB.COM/TURRICAN128"'),
+    (30, '?"/TXT2DIRART"'),
 ]
 
 # The handful of BASIC tokens this demo needs. '?' is the standard
@@ -96,35 +113,45 @@ def find_c1541(explicit=None):
     return found
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--c1541")
-    ap.add_argument("-o", "--out", default=str(ROOT / "examples.d64"))
-    args = ap.parse_args()
+BASE = ROOT / "tools" / "examples-base.d64"
+ART = ROOT / "tools" / "examples-disk-art.txt"
 
-    c1541 = find_c1541(args.c1541)
-    out = Path(args.out)
 
+def rebuild_base(c1541, dest):
+    """Stage 1: master a fresh disk with the BASIC demos on it."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         demo = tmp / "demo.prg"
         demo.write_bytes(build_basic(BASIC_LINES))
         readme = tmp / "readme.prg"
-        readme.write_bytes(build_basic([
-            (10, '?"SEE GITHUB.COM/TURRICAN128"'),
-            (20, '?"/TXT2DIRART"'),
-        ]))
+        readme.write_bytes(build_basic(README_LINES))
 
         subprocess.run(
-            [c1541, "-format", DISK_NAME, "d64", str(out),
+            [c1541, "-format", DISK_NAME, "d64", str(dest),
              "-write", str(demo), "demo",
              "-write", str(readme), "readme"],
             check=True, capture_output=True)
+    print(f"[*] mastered {dest.name}  {dest.stat().st_size} B")
 
-    art = ROOT / "tools" / "examples-disk-art.txt"
-    data = out.read_bytes()
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rebuild-base", action="store_true",
+                    help="re-master the base disk with c1541 (only needed when "
+                         "the demo programs change)")
+    ap.add_argument("--c1541", help="path to c1541 if it is not on PATH")
+    ap.add_argument("-o", "--out", default=str(ROOT / "examples.d64"))
+    args = ap.parse_args()
+
+    if args.rebuild_base:
+        rebuild_base(find_c1541(args.c1541), BASE)
+
+    if not BASE.exists():
+        sys.exit(f"!! {BASE} is missing -- run with --rebuild-base (needs c1541)")
+
+    out = Path(args.out)
     stamped, _ = txt2dirart.stamp(
-        data, txt2dirart.art_from_text(art), log=lambda *a, **k: None)
+        BASE.read_bytes(), txt2dirart.art_from_text(ART), log=lambda *a, **k: None)
     out.write_bytes(stamped)
 
     print(f"[*] {out}  {out.stat().st_size} B")

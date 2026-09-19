@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    name: test ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.9", "3.12"]
+        exclude:
+          # 3.9 is the floor we promise; testing it on one OS is enough.
+          - os: windows-latest
+            python: "3.9"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: install pytest
+        run: python -m pip install --quiet pytest
+
+      - name: run tests
+        run: python -m pytest tests/ -q
+
+      - name: the tool must run with no packages installed at all
+        # The release binaries bundle nothing but the stdlib, so a stdlib-only
+        # run is the thing that actually has to work. pytest is a test-time
+        # dependency, not a runtime one, and this step proves it.
+        run: |
+          python txt2dirart.py --version
+          python txt2dirart.py tests/fixtures/three_files.d64 \
+            --from-text art-examples/01-simple-frame.txt --dry-run
+
+  examples:
+    name: shipped examples.d64 is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: rebuild examples.d64 and diff it against the committed copy
+        # A committed binary drifts silently. If someone edits the art and
+        # forgets to rebuild, the disk people download stops matching the
+        # repo. Stamping is pure Python, so this needs no emulator: the
+        # mastered base disk is committed and only re-made when the BASIC
+        # demos change.
+        run: |
+          cp examples.d64 committed.d64
+          python tools/make_examples.py
+          cmp committed.d64 examples.d64 \
+            || { echo "::error::examples.d64 is stale -- run tools/make_examples.py"; exit 1; }
+
+      - name: the base disk still holds both demo programs
+        # Guards against someone committing a base disk that lost a file.
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path[:0] = ["tests", "."]
+          import d64reader as dr
+          names = sorted(e.name for e in dr.real_files("tools/examples-base.d64"))
+          assert names == ["DEMO", "README"], names
+          print("base disk OK:", names)
+          PY
