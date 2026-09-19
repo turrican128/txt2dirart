@@ -1,130 +1,288 @@
 #!/usr/bin/env python3
-"""Stamp directory art onto a .d64 without touching its files.
+"""txt2dirart -- stamp directory art onto a .d64 from a plain text file.
 
-The crack disk is mastered by c1541 (format + write one prg), which has no
-dir-art support, and we are not a Sparkle production so the .sls "DirArt:"
-route is not available either. This does the same job directly: it rewrites
-track 18's directory chain as [art entries] + [the real files], so the
-listing draws a picture and HRTRAINER still loads.
+A 1541 directory listing is just a chain of 32-byte entries on track 18. If
+you add entries that are closed DELs owning no sectors, the drive happily
+lists them but they cost nothing and load nothing -- so the listing draws a
+picture. That is the whole trick, and it is what this tool does.
 
-Art entries are closed-DEL ($80) with 0 blocks -- the drive lists them but
-they own no sectors, which is the standard dir-art trick.
+What makes it worth a tool rather than a hex editor is the placement syntax:
+a line of the form `@cracktro` means "put the REAL file called CRACKTRO
+here", so a listing can interleave art and files freely instead of being
+art-block-then-files. Any real file you do not name is appended at the end,
+so a typo in the art can never silently drop a file off the disk.
 
-Art sources:
-  --from-d64 art.d64    copy the entry names out of a dir-art disk
-                        (DirMaster output, or Arok's green_dirart.d64)
-  --from-text art.txt   one line per entry, <=16 chars, blank line = blank row
+    txt2dirart disk.d64 --from-text art.txt -o arted.d64
+    txt2dirart disk.d64 --from-text art.txt --in-place
+    txt2dirart disk.d64 --from-d64 someones-art.d64 -o arted.d64
+    txt2dirart disk.d64 --from-text art.txt --dry-run
 
-Usage:
-  python dirart.py out/hr_trainer.d64 --from-text dirart.txt
-  python dirart.py out/hr_trainer.d64 --from-d64 green_dirart.d64 -o arted.d64
+Art file format:
 
-Run d64nice.exe afterwards if the art uses '|' or the long-line PETSCII char.
+    ----------------      an art row, up to 16 characters
+                          a blank line is a full-width blank row
+    @cracktro             place the real file CRACKTRO at this point
+    \\xa0\\xa0 DR.J        \\xNN writes PETSCII byte NN directly
+
+Nothing outside track 18 is ever written. The files on the disk keep their
+start sector and their length; only the listing changes.
 """
-import argparse, os, sys
+import argparse
+import os
+import sys
+
+__version__ = "1.0.0"
 
 DIR_TRACK = 18
 ENTRY_SIZE = 32
 ENTRIES_PER_SECTOR = 8
-PAD = 0xA0                      # CBM pads filenames with $A0, not spaces
+NAME_LEN = 16
+PAD_SHIFTED = 0xA0              # CBM pads real filenames with $A0
+PAD_ART = 0x20                  # ...but art rows need real spaces, see below
+DIR_INTERLEAVE = 3
 
+# Every .d64 length we accept, mapped to its track count. The odd sizes carry
+# a trailing error-info block (one byte per sector); we never touch it, but we
+# must not mistake it for corruption either.
+D64_SIZES = {
+    174848: 35,     # 35 tracks
+    175531: 35,     # 35 tracks + error info
+    196608: 40,     # 40 tracks
+    197376: 40,     # 40 tracks + error info
+}
+
+
+# --------------------------------------------------------------------------
+# errors -- one class per exit code, so scripts can branch on what went wrong
+# --------------------------------------------------------------------------
+
+class DirArtError(Exception):
+    """Base for every refusal. `code` becomes the process exit status."""
+    code = 1
+
+
+class BadImage(DirArtError):
+    """The .d64 is not a shape we can work with."""
+    code = 3
+
+
+class BadArt(DirArtError):
+    """The art file does not parse."""
+    code = 4
+
+
+class TokenNotFound(DirArtError):
+    """An @token names a file that is not on the disk."""
+    code = 5
+
+
+class NoRoom(DirArtError):
+    """Track 18 cannot hold this many entries."""
+    code = 6
+
+
+# --------------------------------------------------------------------------
+# 1541 geometry
+# --------------------------------------------------------------------------
 
 def sectors_on(track):
-    if track <= 17: return 21
-    if track <= 24: return 19
-    if track <= 30: return 18
+    """Sectors in a track. Zones are the same on 35- and 40-track disks."""
+    if track <= 17:
+        return 21
+    if track <= 24:
+        return 19
+    if track <= 30:
+        return 18
     return 17
 
 
 def offset(track, sector):
+    """Byte offset of a sector, counted from track 1 sector 0."""
     n = sum(sectors_on(t) for t in range(1, track))
     return (n + sector) * 256
 
 
+def track_count(data):
+    """Track count for this image, or refuse it."""
+    size = len(data)
+    if size not in D64_SIZES:
+        known = ", ".join(str(s) for s in sorted(D64_SIZES))
+        raise BadImage(
+            f"{size} bytes is not a .d64 -- expected one of: {known} "
+            f"(35 or 40 tracks, with or without error info)")
+    return D64_SIZES[size]
+
+
+# --------------------------------------------------------------------------
+# reading the directory
+# --------------------------------------------------------------------------
+
 def read_chain(d):
-    """Walk the directory chain, returning [(track,sector), ...] and all live entries."""
+    """Walk track 18's chain, returning [(track, sector), ...] and its entries."""
     chain, entries = [], []
     t, s = DIR_TRACK, 1
     seen = set()
     while t:
         if (t, s) in seen:
-            sys.exit("!! directory chain loops -- refusing to touch this disk")
+            raise BadImage("directory chain loops -- refusing to touch this disk")
+        if t > track_count(d) or s >= sectors_on(t):
+            raise BadImage(f"directory chain points at t{t}/s{s}, which is off the disk")
         seen.add((t, s))
         chain.append((t, s))
         base = offset(t, s)
         for i in range(ENTRIES_PER_SECTOR):
             e = bytearray(d[base + i * ENTRY_SIZE: base + (i + 1) * ENTRY_SIZE])
-            if e[2]:                       # byte 2 = file type; 0 = never used
+            if e[2]:                       # byte 2 = file type; 0 = slot never used
                 e[0] = e[1] = 0            # strip the link bytes off entry 0
                 entries.append(e)
         t, s = d[base], d[base + 1]
     return chain, entries
 
 
-def make_art_entry(name_bytes, pad=PAD):
-    e = bytearray(ENTRY_SIZE)
-    e[2] = 0x80                            # closed DEL
-    e[3] = e[4] = 0                        # owns no data block
-    e[5:21] = name_bytes[:16].ljust(16, bytes([pad]))
-    return e
-
-
-def art_from_d64(path):
-    d = open(path, "rb").read()
-    _, entries = read_chain(d)
-    return [make_art_entry(bytes(e[5:21])) for e in entries]
-
-
-def art_from_text(path):
-    """Art rows, plus optional '@name' placement tokens.
-
-    A line of the form  @cracktro  is not art -- it means "put the REAL file
-    called CRACKTRO here". That is what lets a listing interleave files and art
-    freely, e.g. file / separator / file / separator / art. Any real file not
-    named by a token is appended at the end, so a file can never be dropped by
-    a typo in the art.
-    """
-    out = []
-    with open(path, "rb") as fh:
-        for raw in fh.read().split(b"\n"):
-            line = raw.rstrip(b"\r")
-            if line.startswith(b"@"):
-                out.append("@" + line[1:].strip().decode("latin1").upper())
-                continue
-            if len(line) > 16:
-                sys.exit(f"!! art line longer than 16 chars: {line!r}")
-            # pad art rows with real spaces, not $A0: a row of $A0 lists as an
-            # empty name ("") instead of a full-width blank line
-            out.append(make_art_entry(line.upper(), pad=0x20))
-    while out and isinstance(out[-1], bytearray) and out[-1][5:21] == b" " * 16:
-        out.pop()                                       # drop trailing blank rows
-    return out
+def is_art_entry(e):
+    """Art rows are DELs that own no block. Real files are everything else."""
+    return (e[2] & 0x0F) == 0 and (e[30] | e[31]) == 0
 
 
 def entry_name(e):
-    return bytes(e[5:21]).replace(bytes([PAD]), b"").rstrip().decode("latin1").upper()
+    """Filename with CBM's $A0 padding removed, for matching @tokens."""
+    return bytes(e[5:NAME_LEN + 5]).replace(bytes([PAD_SHIFTED]), b"").rstrip().decode(
+        "latin1").upper()
 
 
-def place(art, real):
-    """Interleave real files into the art according to '@name' tokens."""
+def display_name(e):
+    """The 16 name bytes rendered for a --dry-run listing."""
+    raw = bytes(e[5:NAME_LEN + 5]).replace(bytes([PAD_SHIFTED]), b" ")
+    return "".join(chr(b) if 32 <= b < 127 else "." for b in raw)
+
+
+# --------------------------------------------------------------------------
+# building entries
+# --------------------------------------------------------------------------
+
+def make_art_entry(name_bytes, pad=PAD_ART):
+    e = bytearray(ENTRY_SIZE)
+    e[2] = 0x80                            # closed DEL
+    e[3] = e[4] = 0                        # owns no data block
+    e[5:5 + NAME_LEN] = name_bytes[:NAME_LEN].ljust(NAME_LEN, bytes([pad]))
+    return e
+
+
+def unescape(line):
+    r"""Turn an art line into exactly the bytes to store.
+
+    Plain text is uppercased -- the C64's default charset has no lowercase,
+    so lowercase input would otherwise come out as graphics characters. But
+    \xNN escapes are taken literally, which is how you reach the PETSCII
+    codes a text editor cannot type: the full-width bar, the corner pieces,
+    shifted space ($A0). \\ is a literal backslash.
+
+    Returns the byte string; raises BadArt on a malformed escape.
+    """
+    out = bytearray()
+    i = 0
+    while i < len(line):
+        b = line[i:i + 1]
+        if b != b"\\":
+            out += b.upper()
+            i += 1
+            continue
+        nxt = line[i + 1:i + 2]
+        if nxt == b"\\":
+            out += b"\\"
+            i += 2
+        elif nxt in (b"x", b"X"):
+            digits = line[i + 2:i + 4]
+            if len(digits) < 2:
+                raise BadArt(rf"truncated escape at end of line: {line.decode('latin1')!r}")
+            try:
+                out.append(int(digits, 16))
+            except ValueError:
+                raise BadArt(
+                    rf"bad hex escape \x{digits.decode('latin1')} "
+                    rf"in line {line.decode('latin1')!r}")
+            i += 4
+        else:
+            raise BadArt(
+                rf"unknown escape \{nxt.decode('latin1')} "
+                rf"in line {line.decode('latin1')!r} (use \\ for a literal backslash)")
+    return bytes(out)
+
+
+def art_from_text(path):
+    """Parse an art file into art entries and '@name' placement tokens."""
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+    except OSError as exc:
+        raise BadArt(f"cannot read art file: {exc}")
+
+    out = []
+    for lineno, raw_line in enumerate(raw.split(b"\n"), 1):
+        line = raw_line.rstrip(b"\r")
+        if line.startswith(b"@"):
+            out.append("@" + line[1:].strip().decode("latin1").upper())
+            continue
+        try:
+            cooked = unescape(line)
+        except BadArt as exc:
+            raise BadArt(f"line {lineno}: {exc}")
+        if len(cooked) > NAME_LEN:
+            raise BadArt(
+                f"line {lineno}: {len(cooked)} characters, but a directory entry "
+                f"holds {NAME_LEN}: {line.decode('latin1')!r}")
+        # Art rows are padded with real spaces, not $A0: a row of $A0 lists as
+        # an empty name ("") instead of the full-width blank line you drew.
+        out.append(make_art_entry(cooked, pad=PAD_ART))
+
+    while out and isinstance(out[-1], bytearray) and out[-1][5:5 + NAME_LEN] == b" " * NAME_LEN:
+        out.pop()                                       # trailing blanks are noise
+    return out
+
+
+def art_from_d64(path):
+    """Lift the entry names off another disk and reuse them as art."""
+    try:
+        with open(path, "rb") as fh:
+            d = fh.read()
+    except OSError as exc:
+        raise BadArt(f"cannot read source .d64: {exc}")
+    track_count(d)
+    _, entries = read_chain(d)
+    return [make_art_entry(bytes(e[5:5 + NAME_LEN]), pad=PAD_ART) for e in entries]
+
+
+# --------------------------------------------------------------------------
+# placement
+# --------------------------------------------------------------------------
+
+def place(art, real, log=print):
+    """Interleave the real files into the art according to '@name' tokens."""
     pool = list(real)
     entries = []
     for item in art:
         if not isinstance(item, str):
-            entries.append(item); continue
+            entries.append(item)
+            continue
         want = item[1:]
-        m = next((e for e in pool if entry_name(e) == want), None)
-        if m is None:
-            sys.exit(f"!! dirart token @{want} matches no file on the disk "
-                     f"(disk has: {', '.join(entry_name(e) for e in pool) or 'nothing'})")
-        pool.remove(m); entries.append(m)
-        print(f"    placed  {want!r} where @{want} appears")
+        match = next((e for e in pool if entry_name(e) == want), None)
+        if match is None:
+            have = ", ".join(entry_name(e) for e in pool) or "nothing"
+            raise TokenNotFound(
+                f"@{want} matches no file on the disk (disk has: {have})")
+        pool.remove(match)
+        entries.append(match)
+        log(f"    placed  {want!r} where @{want} appears")
     if pool:
-        print(f"[!] {len(pool)} file(s) not named by a token -- appended at the end: "
-              + ", ".join(entry_name(e) for e in pool))
+        log(f"[!] {len(pool)} file(s) not named by a token -- appended at the end: "
+            + ", ".join(entry_name(e) for e in pool))
         entries.extend(pool)
     return entries
 
+
+# --------------------------------------------------------------------------
+# BAM
+# --------------------------------------------------------------------------
 
 def bam_free(d, track):
     return d[offset(DIR_TRACK, 0) + 4 * track]
@@ -142,48 +300,44 @@ def bam_allocate(d, track, sector):
         d[b] -= 1
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("d64")
-    ap.add_argument("--from-d64", dest="src_d64")
-    ap.add_argument("--from-text", dest="src_text")
-    ap.add_argument("-o", "--out", help="write here instead of in place")
-    ap.add_argument("--file-first", action="store_true",
-                    help="put the real files above the art (default: art first)")
-    args = ap.parse_args()
-    if bool(args.src_d64) == bool(args.src_text):
-        sys.exit("!! pick exactly one of --from-d64 / --from-text")
+# --------------------------------------------------------------------------
+# the stamp itself
+# --------------------------------------------------------------------------
 
-    d = bytearray(open(args.d64, "rb").read())
-    if len(d) < 174848:
-        sys.exit(f"!! {args.d64}: {len(d)} B -- not a 35-track d64")
+def stamp(data, art, file_first=False, log=print):
+    """Return a new image with `art` stamped onto it. `data` is not modified."""
+    d = bytearray(data)
+    track_count(d)
 
     chain, live = read_chain(d)
-    real = [e for e in live if (e[2] & 0x0F) != 0]     # DEL entries are art, keep the rest
-    art = art_from_d64(args.src_d64) if args.src_d64 else art_from_text(args.src_text)
+    real = [e for e in live if not is_art_entry(e)]
     tokens = [x for x in art if isinstance(x, str)]
-    print(f"[*] {len(real)} real file(s) kept, {len(art) - len(tokens)} art rows"
-          + (f", {len(tokens)} placement token(s)" if tokens else ""))
+
+    log(f"[*] {len(real)} real file(s) kept, {len(art) - len(tokens)} art rows"
+        + (f", {len(tokens)} placement token(s)" if tokens else ""))
     for e in real:
-        print(f"    keeping {entry_name(e)!r} ({e[30] + e[31] * 256} blocks)")
+        n = e[30] + e[31] * 256
+        log(f"    keeping {entry_name(e)!r} ({n} block{'' if n == 1 else 's'})")
+
     if tokens:
-        entries = place(art, real)
+        entries = place(art, real, log=log)
     else:
-        entries = (real + art) if args.file_first else (art + real)
+        entries = (real + art) if file_first else (art + real)
 
     need = max(1, (len(entries) + ENTRIES_PER_SECTOR - 1) // ENTRIES_PER_SECTOR)
-    # grow the chain on track 18 with the usual interleave of 3
     while len(chain) < need:
         last_s = chain[-1][1]
-        cand = [(last_s + 3 + i) % sectors_on(DIR_TRACK) for i in range(sectors_on(DIR_TRACK))]
+        span = sectors_on(DIR_TRACK)
+        cand = [(last_s + DIR_INTERLEAVE + i) % span for i in range(span)]
         nxt = next((s for s in cand if s and (DIR_TRACK, s) not in chain
                     and bam_is_free(d, DIR_TRACK, s)), None)
         if nxt is None:
-            sys.exit(f"!! track 18 is full -- {len(entries)} entries need {need} sectors")
+            raise NoRoom(
+                f"track {DIR_TRACK} is full -- {len(entries)} entries need "
+                f"{need} sectors, and only {len(chain)} are available")
         chain.append((DIR_TRACK, nxt))
         bam_allocate(d, DIR_TRACK, nxt)
 
-    # rewrite every sector in the chain
     for idx, (t, s) in enumerate(chain):
         base = offset(t, s)
         d[base:base + 256] = bytes(256)
@@ -199,12 +353,101 @@ def main():
                 e[0], e[1] = d[base], d[base + 1]
             d[base + i * ENTRY_SIZE: base + (i + 1) * ENTRY_SIZE] = e
 
+    log(f"[*] {len(chain)} directory sector(s) on track {DIR_TRACK}, "
+        f"{bam_free(d, DIR_TRACK)} free there")
+    return bytes(d), entries
+
+
+# --------------------------------------------------------------------------
+# CLI
+# --------------------------------------------------------------------------
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="txt2dirart",
+        description="Stamp C64 directory art onto a .d64 from a plain text file.",
+        epilog="Art file: one line per row, up to 16 chars. '@name' places a real "
+               r"file there. '\xNN' writes PETSCII byte NN.",
+    )
+    p.add_argument("d64", help="the disk image to stamp")
+    src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--from-text", dest="src_text", metavar="ART.TXT",
+                     help="art file, one line per directory row")
+    src.add_argument("--from-d64", dest="src_d64", metavar="ART.D64",
+                     help="lift the art off another disk's listing")
+    dest = p.add_mutually_exclusive_group()
+    dest.add_argument("-o", "--out", metavar="OUT.D64",
+                      help="write the result here")
+    dest.add_argument("--in-place", action="store_true",
+                      help="overwrite the input image")
+    p.add_argument("--file-first", action="store_true",
+                   help="put the real files above the art (default: art first)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="print the listing that would be written, and stop")
+    p.add_argument("-q", "--quiet", action="store_true", help="only report problems")
+    p.add_argument("--version", action="version", version=f"txt2dirart {__version__}")
+    return p
+
+
+def petscii_str(raw):
+    """Render raw name bytes for a terminal, $A0 padding shown as spaces."""
+    return "".join(chr(b) if 32 <= b < 127 else "." for b in
+                   bytes(raw).replace(bytes([PAD_SHIFTED]), b" "))
+
+
+def print_listing(d, entries):
+    """Print what a LIST would show, header line and all."""
+    bam = offset(DIR_TRACK, 0)
+    name = petscii_str(d[bam + 0x90:bam + 0xA0])
+    disk_id = petscii_str(d[bam + 0xA2:bam + 0xA4])
+    dos = petscii_str(d[bam + 0xA5:bam + 0xA7])
+    print()
+    print(f'    0 "{name}" {disk_id} {dos}')
+    for e in entries:
+        blocks = e[30] + e[31] * 256
+        kind = "del" if is_art_entry(e) else {1: "seq", 2: "prg", 3: "usr", 4: "rel"}.get(
+            e[2] & 0x0F, "prg")
+        print(f'{blocks:5} "{display_name(e)}" {kind}')
+    print()
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    log = (lambda *a, **k: None) if args.quiet else print
+
+    if not args.dry_run and not args.out and not args.in_place:
+        build_parser().error(
+            "refusing to guess where to write: pass -o OUT.D64, or --in-place "
+            "to overwrite the input")
+
+    try:
+        with open(args.d64, "rb") as fh:
+            data = fh.read()
+    except OSError as exc:
+        raise BadImage(f"cannot read {args.d64}: {exc}")
+
+    art = art_from_d64(args.src_d64) if args.src_d64 else art_from_text(args.src_text)
+    result, entries = stamp(data, art, file_first=args.file_first, log=log)
+
+    if args.dry_run:
+        print_listing(result, entries)
+        log("[*] dry run -- nothing written")
+        return 0
+
     out = args.out or args.d64
-    open(out, "wb").write(bytes(d))
-    print(f"[*] {len(chain)} directory sector(s) on track 18, {bam_free(d, DIR_TRACK)} free there")
-    print(f"[*] DONE -> {out}")
+    tmp = out + ".tmp"
+    with open(tmp, "wb") as fh:
+        fh.write(result)
+    os.replace(tmp, out)                   # never leave a half-written disk image
+    log(f"[*] DONE -> {out}")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except DirArtError as exc:
+        print(f"!! {exc}", file=sys.stderr)
+        sys.exit(exc.code)
+    except KeyboardInterrupt:
+        sys.exit(130)
