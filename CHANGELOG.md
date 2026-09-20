@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.1
+
+Fixes from an external code review of 1.0. If you point the tool at damaged or
+unusual disks, take this version.
+
+- **A corrupt directory chain could make the tool overwrite file data or the
+  BAM.** 1.0 only checked that each directory link pointed somewhere on the
+  disk, then zeroed and rewrote every sector in the chain. The chain must now
+  stay on track 18, sectors 1-18, or the disk is refused untouched. Well-formed
+  disks were never affected. A directory that genuinely continues onto another
+  track is now refused rather than handled.
+- The temporary file is created exclusively under a random name. 1.0 wrote to
+  `OUT.tmp`, which silently destroyed a file of that name and would have
+  written through a planted symlink.
+- Stamping in place keeps the file's permissions.
+- A BAM whose bitmap and free count disagree is reported as a bad image (exit 3)
+  instead of a Python traceback.
+- `@token` matching treats a filename as ending at its first `$A0`, the way the
+  drive does. 1.0 deleted every `$A0`, so a hidden-name file could match the
+  wrong token.
+
 ## 1.0
 
 First public release.

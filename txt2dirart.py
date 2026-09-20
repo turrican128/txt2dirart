@@ -31,7 +31,7 @@ import argparse
 import os
 import sys
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 DIR_TRACK = 18
 ENTRY_SIZE = 32
@@ -125,8 +125,16 @@ def read_chain(d):
     while t:
         if (t, s) in seen:
             raise BadImage("directory chain loops -- refusing to touch this disk")
-        if t > track_count(d) or s >= sectors_on(t):
-            raise BadImage(f"directory chain points at t{t}/s{s}, which is off the disk")
+        # Every sector in this chain gets zeroed and rewritten by stamp(), so
+        # the chain is only trusted while it stays where a directory lives:
+        # track 18, sectors 1-18. Sector 0 is the BAM. "Somewhere on the disk"
+        # is not good enough -- v1.0 checked only that, and a corrupt link to
+        # t17/s13 made it overwrite the last data sector of a real file.
+        if t != DIR_TRACK or not 1 <= s < sectors_on(DIR_TRACK):
+            raise BadImage(
+                f"directory chain points at t{t}/s{s}; directory sectors must be "
+                f"track {DIR_TRACK}, sectors 1-{sectors_on(DIR_TRACK) - 1}. This "
+                f"disk's directory is damaged or non-standard -- refusing to touch it")
         seen.add((t, s))
         chain.append((t, s))
         base = offset(t, s)
@@ -145,9 +153,23 @@ def is_art_entry(e):
 
 
 def entry_name(e):
-    """Filename with CBM's $A0 padding removed, for matching @tokens."""
-    return bytes(e[5:NAME_LEN + 5]).replace(bytes([PAD_SHIFTED]), b"").rstrip().decode(
-        "latin1").upper()
+    """The name an @token is matched against: what LOAD would match.
+
+    A 1541 filename ends at the first $A0. Anything after it is the hidden-name
+    trick, shown after the closing quote in a listing but not part of the name.
+    v1.0 deleted every $A0 instead, so the file A,$A0,B read as "AB" and an
+    @ab token could land on the wrong file.
+
+    Trailing spaces are still dropped, on purpose: a token comes from a text
+    file, where trailing whitespace is invisible and usually an accident, so
+    "AB " on the disk answers to @ab. If a disk holds both "AB" and "AB ",
+    repeated @ab tokens place them in directory order.
+    """
+    raw = bytes(e[5:NAME_LEN + 5])
+    cut = raw.find(bytes([PAD_SHIFTED]))
+    if cut != -1:
+        raw = raw[:cut]
+    return raw.rstrip(b" ").decode("latin1").upper()
 
 
 def display_name(e):
@@ -357,6 +379,13 @@ def bam_is_free(d, track, sector):
 def bam_allocate(d, track, sector):
     b = offset(DIR_TRACK, 0) + 4 * track
     if d[b + 1 + sector // 8] & (1 << (sector % 8)):
+        if d[b] == 0:
+            # The bitmap and the free count disagree. Decrementing would raise
+            # a bare ValueError out of a bytearray; this is a damaged disk and
+            # should be reported as one.
+            raise BadImage(
+                f"BAM is inconsistent on track {track}: sector {sector} is marked "
+                f"free but the track's free count is zero")
         d[b + 1 + sector // 8] &= ~(1 << (sector % 8)) & 0xFF
         d[b] -= 1
 
@@ -503,12 +532,57 @@ def main(argv=None):
         return 0
 
     out = args.out or args.d64
-    tmp = out + ".tmp"
-    with open(tmp, "wb") as fh:
-        fh.write(result)
-    os.replace(tmp, out)                   # never leave a half-written disk image
+    write_atomically(out, result)
     log(f"[*] DONE -> {out}")
     return 0
+
+
+def write_atomically(out, data):
+    """Write `data` to `out` so that a crash can never leave half a disk image.
+
+    The temporary file is created with O_EXCL under a random name. O_EXCL
+    refuses an existing path and never follows a symlink, so neither a file
+    the user happens to own nor a link someone planted can be written through.
+    v1.0 used OUT + ".tmp", opened with "wb": a file of that name was silently
+    truncated and then consumed by the rename.
+
+    This is deliberately not tempfile.mkstemp(): the tool imports argparse, os
+    and sys and nothing else, and the release build's module exclusions are
+    tuned to exactly that.
+    """
+    folder = os.path.dirname(os.path.abspath(out))
+    try:
+        mode = os.stat(out).st_mode & 0o7777       # replacing a file: keep its permissions
+    except OSError:
+        umask = os.umask(0)                        # new file: what open() would have given
+        os.umask(umask)
+        mode = 0o666 & ~umask
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    for _ in range(16):
+        tmp = os.path.join(
+            folder, "." + os.path.basename(out) + "." + os.urandom(6).hex() + ".tmp")
+        try:
+            fd = os.open(tmp, flags, 0o600)
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise DirArtError(f"could not create a temporary file next to {out}")
+
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, out)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 if __name__ == "__main__":
