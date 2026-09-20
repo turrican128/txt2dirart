@@ -43,7 +43,7 @@ work on any disk as-is.
 |---|---|---|
 | `01-simple-frame.txt` | no | the simplest thing that works |
 | `02-interleaved.txt` | **yes** | `@tokens` putting real files inside the art |
-| `03-petscii-escapes.txt` | **yes** | `\xNN` for PETSCII you cannot type |
+| `03-petscii-escapes.txt` | **yes** | a rounded PETSCII frame drawn with `\xNN` escapes |
 | `04-blank-rows.txt` | no | blank rows as spacing |
 
 ## Rules, briefly
