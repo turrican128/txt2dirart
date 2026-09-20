@@ -54,3 +54,7 @@ First public release.
   instead of rows of invisible shifted-space, and the README documents the six
   frame codes, verified on a real C64. Alex's idea, after building one for his
   own disk.
+- The Linux binary is stripped (the Windows one is not): most of its 12 MB was
+  libpython carrying its debug symbols.
+- The release zip now includes `art-examples/README.md` and the screenshots the
+  README embeds, and the build fails if any expected file is missing from it.

@@ -19,9 +19,11 @@ jobs:
           - os: ubuntu-latest
             target: linux
             binary: txt2dirart
+            strip: "--strip"
           - os: windows-latest
             target: windows
             binary: txt2dirart.exe
+            strip: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -44,12 +46,17 @@ jobs:
         # the whole png2prg download. Excluding the modules we provably never
         # import takes it to about a third of that.
         #
-        # No --strip. It corrupts the bundled python311.dll on Windows --
-        # the binary builds cleanly and then dies with "Failed to load Python
-        # DLL / LoadLibrary: Invalid access to memory location" (exit 127),
-        # which is how v0.9.0-rc2 failed. It is worth nothing anyway: stripping
-        # saved 53 KB of 5.3 MB, about 1%. Every byte of the real reduction
-        # comes from the exclusions below.
+        # --strip on Linux ONLY (see matrix.strip).
+        #
+        # On Windows it corrupts the bundled python311.dll -- the binary builds
+        # cleanly and then dies with "Failed to load Python DLL / LoadLibrary:
+        # Invalid access to memory location" (exit 127), which is how
+        # v0.9.0-rc2 failed. It is worth nothing there anyway: 53 KB of 5.3 MB.
+        #
+        # On Linux it is most of the binary. v0.9.0-rc3 shipped a 12.1 MB Linux
+        # build of which 8.6 MB was libpython3.11.so carrying its symbols. The
+        # rc2 Linux job ran with --strip and passed the smoke test, so it is
+        # known to be safe on this platform.
         #
         # An over-aggressive exclude list produces a binary that builds fine
         # and dies at startup, which is why the smoke test below is not
@@ -57,7 +64,7 @@ jobs:
         # this list.
         run: >
           pyinstaller --onefile --name txt2dirart
-          --console --noupx
+          --console --noupx ${{ matrix.strip }}
           --exclude-module tkinter --exclude-module unittest
           --exclude-module email --exclude-module http
           --exclude-module xml --exclude-module xmlrpc
@@ -115,17 +122,34 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           DIR="txt2dirart-${VERSION}"
-          mkdir -p "$DIR/art-examples"
+          mkdir -p "$DIR/art-examples" "$DIR/docs"
           cp artifacts/txt2dirart-windows/txt2dirart.exe "$DIR/"
           cp artifacts/txt2dirart-linux/txt2dirart       "$DIR/"
           chmod +x "$DIR/txt2dirart"
           cp txt2dirart.py README.md CHANGELOG.md LICENSE "$DIR/"
-          cp art-examples/*.txt "$DIR/art-examples/"
+          # Everything in art-examples/, not just *.txt: its README is the
+          # file that explains why the examples' @tokens fail on your own disk,
+          # which is the first thing a new user hits. rc3 shipped without it.
+          cp art-examples/* "$DIR/art-examples/"
+          # The README embeds these; without them its images are dead offline.
+          cp docs/*.png "$DIR/docs/"
           cp examples.d64 "$DIR/"
           zip -r -q "${DIR}.zip" "$DIR"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "ZIP=${DIR}.zip"   >> "$GITHUB_ENV"
           unzip -l "${DIR}.zip"
+          # A file the zip is supposed to carry going missing must fail the
+          # build. rc3 shipped without art-examples/README.md and nothing
+          # noticed until the listing was read by eye.
+          required="txt2dirart txt2dirart.exe txt2dirart.py README.md CHANGELOG.md LICENSE"
+          required="$required examples.d64 art-examples/README.md"
+          required="$required art-examples/01-simple-frame.txt art-examples/03-petscii-escapes.txt"
+          required="$required docs/listing-on-a-c64.png docs/petscii-frame-on-a-c64.png"
+          listing=$(unzip -Z1 "${DIR}.zip")
+          for f in $required; do
+            echo "$listing" | grep -qxF "${DIR}/${f}" || { echo "::error::missing from the zip: $f"; exit 1; }
+          done
+          echo "zip contents verified"
 
       - name: publish the release
         uses: softprops/action-gh-release@v2
