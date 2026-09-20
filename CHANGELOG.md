@@ -43,3 +43,9 @@ First public release.
   files at all. Warnings, not refusals: art-only disks are a real use. Found
   by Alex pointing the tool at a blank image and reading "0 real file(s) kept"
   as the tool having done nothing.
+- **The plain command stamps the disk you named.** An earlier pre-release
+  demanded `-o` or `--in-place` and refused otherwise. Only track 18 is ever
+  rewritten, so in-place is a safe default, and the refusal also hid the
+  disk-sanity warnings: it fired before the image was even opened.
+  `--in-place` is still accepted, so scripts written against the old contract
+  keep working.

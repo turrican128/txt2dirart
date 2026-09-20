@@ -237,12 +237,43 @@ def test_truncated_image_is_refused(tmp_path, art_file, run_tool):
 # the write destination must be explicit
 # --------------------------------------------------------------------------
 
-def test_refuses_to_guess_where_to_write(three_files, art_file, run_tool):
-    """Overwriting someone's only copy of a disk must be something they asked for."""
+def test_the_plain_command_stamps_the_disk_you_named(three_files, art_file, run_tool):
+    """No -o, no --in-place: the tool stamps the disk it was given.
+
+    An earlier version refused here and demanded an explicit destination.
+    Alex hit that wall three times in one afternoon of testing, and the
+    safety argument did not hold up: only track 18 is ever rewritten, so
+    the worst outcome is a listing you fix by stamping again.
+    """
+    run_tool(three_files, "--from-text", art_file(SIMPLE_ART), expect_ok=True)
+    assert [e.is_art for e in dr.read_directory(three_files)][0] is True
+
+
+def test_in_place_flag_is_still_accepted(three_files, art_file, run_tool):
+    """Build scripts written against the old contract must keep working."""
+    run_tool(three_files, "--from-text", art_file(SIMPLE_ART), "--in-place",
+             expect_ok=True)
+
+
+def test_default_and_explicit_in_place_produce_the_same_disk(three_files, art_file,
+                                                             tmp_path, run_tool):
+    twin = tmp_path / "twin.d64"
+    twin.write_bytes(three_files.read_bytes())
+    art = art_file(SIMPLE_ART)
+    run_tool(three_files, "--from-text", art, expect_ok=True)
+    run_tool(twin, "--from-text", art, "--in-place", expect_ok=True)
+    assert three_files.read_bytes() == twin.read_bytes()
+
+
+def test_the_default_still_never_touches_file_data(three_files, art_file, run_tool):
+    """The reason in-place is a safe default, asserted rather than claimed."""
     original = three_files.read_bytes()
-    proc = run_tool(three_files, "--from-text", art_file(SIMPLE_ART), expect_ok=False)
-    assert "refusing to guess" in (proc.stdout + proc.stderr)
-    assert three_files.read_bytes() == original, "must not have touched the disk"
+    run_tool(three_files, "--from-text", art_file(SIMPLE_ART), expect_ok=True)
+    stamped = three_files.read_bytes()
+    for track in list(range(1, 18)) + list(range(19, 36)):
+        for sector in range(dr.sectors_in_track(track)):
+            off = dr.byte_offset(track, sector)
+            assert original[off:off + 256] == stamped[off:off + 256]
 
 
 def test_out_and_in_place_together_is_refused(three_files, art_file, tmp_path, run_tool):
