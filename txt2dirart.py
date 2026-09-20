@@ -24,14 +24,15 @@ Art file format:
     @cracktro             place the real file CRACKTRO at this point
     \\xa0\\xa0 DR.J        \\xNN writes PETSCII byte NN directly
 
-Nothing outside track 18 is ever written. The files on the disk keep their
+Nothing outside track 18 is ever written, and no sector any file occupies is
+touched even if the BAM claims it is free. The files on the disk keep their
 start sector and their length; only the listing changes.
 """
 import argparse
 import os
 import sys
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 DIR_TRACK = 18
 ENTRY_SIZE = 32
@@ -367,6 +368,50 @@ def format_warnings(d):
     return out
 
 
+def walk_file_chain(d, start, what):
+    """Every sector a file occupies, following its link bytes to the end.
+
+    Raises BadImage if the chain loops or leaves the disk: we are about to
+    decide which sectors are safe to erase, and a chain we cannot follow is
+    one we cannot clear.
+    """
+    sectors, (tr, se) = [], start
+    seen = set()
+    while tr:
+        if (tr, se) in seen:
+            raise BadImage(f"{what} has a sector chain that loops at t{tr}/s{se}")
+        if tr > track_count(d) or se >= sectors_on(tr):
+            raise BadImage(f"{what} has a sector chain running off the disk at t{tr}/s{se}")
+        seen.add((tr, se))
+        sectors.append((tr, se))
+        o = offset(tr, se)
+        tr, se = d[o], d[o + 1]         # last sector links to (0, bytes-used)
+    return sectors
+
+
+def file_sectors_on_dir_track(d, files):
+    """{sector on track 18: filename} for sectors live files actually occupy.
+
+    Directory growth used to pick sectors from the BAM alone. A BAM that
+    marks a sector free while a file still runs through it made the tool
+    allocate and zero that sector -- exit 0, no warning, file data gone.
+    The files themselves are the authority; the BAM is only a hint.
+    """
+    used = {}
+    for e in files:
+        name = entry_name(e) or "a file"
+        starts = [(e[3], e[4])]
+        if (e[2] & 0x0F) == 4:          # REL: the side-sector chain counts too
+            starts.append((e[21], e[22]))
+        for start in starts:
+            if start[0] == 0:
+                continue
+            for tr, se in walk_file_chain(d, start, name):
+                if tr == DIR_TRACK:
+                    used.setdefault(se, name)
+    return used
+
+
 def bam_free(d, track):
     return d[offset(DIR_TRACK, 0) + 4 * track]
 
@@ -420,12 +465,27 @@ def stamp(data, art, file_first=False, log=print):
     else:
         entries = (real + art) if file_first else (art + real)
 
+    # Which sectors on track 18 are really in use, according to the files
+    # themselves rather than to the BAM.
+    occupied = file_sectors_on_dir_track(d, real)
+    clash = sorted(set(occupied) & {s for _, s in chain})
+    if clash:
+        where = ", ".join(f"s{s} ({occupied[s]})" for s in clash)
+        raise BadImage(
+            f"this disk contradicts itself: track {DIR_TRACK} {where} is part of a "
+            f"file's data as well as the directory. Stamping would erase it -- "
+            f"refusing to touch this disk")
+    if occupied:
+        log(f"[!] track {DIR_TRACK} {', '.join(f's{s} ({n})' for s, n in sorted(occupied.items()))}"
+            f" holds file data -- leaving it alone, so there is less room for art")
+
     need = max(1, (len(entries) + ENTRIES_PER_SECTOR - 1) // ENTRIES_PER_SECTOR)
     while len(chain) < need:
         last_s = chain[-1][1]
         span = sectors_on(DIR_TRACK)
         cand = [(last_s + DIR_INTERLEAVE + i) % span for i in range(span)]
         nxt = next((s for s in cand if s and (DIR_TRACK, s) not in chain
+                    and s not in occupied
                     and bam_is_free(d, DIR_TRACK, s)), None)
         if nxt is None:
             raise NoRoom(

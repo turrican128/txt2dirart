@@ -352,6 +352,12 @@ These are warnings, not refusals. Stamping art onto a blank disk is a
 legitimate thing to want. But if you did not mean to, you find out now rather
 than on the C64.
 
+**No sector a file occupies is ever touched** -- not even one the BAM claims is
+free. Directory art needs room on track 18, and on an unusual or damaged disk a
+file's data can sit there too. The tool follows every file's sector chain to find out
+which track 18 sectors are really in use, and works around them. If the files and
+the BAM disagree, the files win.
+
 **The tool never frees a block.** It allocates directory sectors on track 18 and
 nothing else, so a disk's free-block count can only stay the same or fall. If a
 disk lost its files, it did not lose them here.

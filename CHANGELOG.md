@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.2
+
+One fix, from a second external review. Take this version.
+
+- **A lying BAM could still cost you file data.** Directory growth chose new
+  sectors from the BAM's free-sector bitmap alone. If a disk marked a track 18
+  sector free while a file's chain still ran through it, the tool allocated that
+  sector and erased it -- and reported success. It now works out which track 18
+  sectors the files themselves occupy, by following every file's sector chain
+  (including a REL file's side sectors), and never allocates one of those
+  whatever the BAM says. It says so when it has to leave a sector alone.
+- A disk where a file's chain runs through the directory's own sectors is
+  refused: it contradicts itself and stamping would erase the file.
+- A file whose sector chain loops or runs off the disk is refused, rather than
+  quietly trusted while deciding what is safe to erase.
+
 ## 1.0.1
 
 Fixes from an external code review of 1.0. If you point the tool at damaged or
