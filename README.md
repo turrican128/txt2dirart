@@ -106,18 +106,20 @@ $ txt2dirart game.d64 --from-text art.txt --dry-run
 Then stamp it:
 
 ```
+$ txt2dirart game.d64 --from-text art.txt
+```
+
+`game.d64` now lists your art above the files.
+
+**Directory art already on the disk is replaced, not added to** — separators made in DirMaster or any other tool included. Every `DEL` entry that owns no blocks counts as art: the tool removes them all and writes yours. Your real files are always kept. This is what makes stamping repeatable: edit the text file, stamp again, and the disk matches the file instead of collecting a second copy of the art.
+
+To leave the original alone and write a new disk instead:
+
+```
 $ txt2dirart game.d64 --from-text art.txt -o release.d64
 ```
 
-`release.d64` now lists your art above the files. `game.d64` is untouched.
-
-To overwrite the input instead, say so explicitly:
-
-```
-$ txt2dirart game.d64 --from-text art.txt --in-place
-```
-
-> **The tool will not guess where to write.** You pass `-o` or `--in-place`. Silently overwriting someone's only copy of a disk is the one mistake this tool could make that cannot be undone.
+> **Stamping in place is safe.** Only track 18 is ever rewritten. Every file keeps its start sector and its length, so the worst outcome is a listing you do not like — and you fix that by stamping again.
 
 ## The art file
 
@@ -237,8 +239,8 @@ txt2dirart DISK.D64 (--from-text ART.TXT | --from-d64 ART.D64)
 |---|---|
 | `--from-text ART.TXT` | art file, one line per row |
 | `--from-d64 ART.D64` | lift the art off another disk's listing |
-| `-o, --out OUT.D64` | write the result here |
-| `--in-place` | overwrite the input image |
+| `-o, --out OUT.D64` | write to a new file instead of stamping the input |
+| `--in-place` | stamp the input. This is the default; the flag lets a build script say so explicitly |
 | `--file-first` | files above the art (default: art above the files) |
 | `--dry-run` | print the listing it *would* write, then stop |
 | `-q, --quiet` | only report problems |

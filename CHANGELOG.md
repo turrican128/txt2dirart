@@ -35,14 +35,21 @@ First public release.
 - Naming a file more times than the disk has copies of it is now an error
   instead of one placement silently vanishing.
 - Errors no longer jump ahead of the progress output when stdout is piped.
-- Release binaries are stripped and exclude unused stdlib modules: the Windows
-  build drops from 8.0 MB to 5.0 MB.
+- Release binaries exclude the stdlib modules the tool never imports: the
+  Windows build drops from 8.0 MB to 5.1 MB. (They are not stripped --
+  `--strip` produces a Windows binary that cannot start.)
 - Tags with a suffix (`v0.9.0-rc1`) publish as prereleases.
 - Warns when the image does not look like a formatted 1541 disk (no `2A` DOS
   type, wrong DOS version, BAM not pointing at t18/s1) and when it holds no
   files at all. Warnings, not refusals: art-only disks are a real use. Found
   by Alex pointing the tool at a blank image and reading "0 real file(s) kept"
   as the tool having done nothing.
+- **The plain command stamps the disk you named.** An earlier pre-release
+  demanded `-o` or `--in-place` and refused otherwise. Only track 18 is ever
+  rewritten, so in-place is a safe default, and the refusal also hid the
+  disk-sanity warnings: it fired before the image was even opened.
+  `--in-place` is still accepted, so scripts written against the old contract
+  keep working.
 - `art-examples/03-petscii-escapes.txt` now draws a rounded PETSCII frame
   instead of rows of invisible shifted-space, and the README documents the six
   frame codes, verified on a real C64. Alex's idea, after building one for his

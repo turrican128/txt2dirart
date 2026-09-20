@@ -83,11 +83,11 @@ jobs:
           "$BIN" tests/fixtures/three_files.d64 \
                  --from-text art-examples/01-simple-frame.txt --dry-run
           cp tests/fixtures/three_files.d64 smoke.d64
-          "$BIN" smoke.d64 --from-text art-examples/02-interleaved.txt --in-place
+          # the plain form, no flags: stamps the named disk in place
+          "$BIN" smoke.d64 --from-text art-examples/02-interleaved.txt
+          "$BIN" smoke.d64 --from-text art-examples/01-simple-frame.txt --in-place
           "$BIN" smoke.d64 --from-text art-examples/03-petscii-escapes.txt -o smoke2.d64
           set +e
-          "$BIN" smoke.d64 --from-text art-examples/01-simple-frame.txt
-          [ $? -ne 0 ] || { echo "::error::should have refused to guess the output"; exit 1; }
           echo '@nosuchfile' > bad.txt
           "$BIN" smoke.d64 --from-text bad.txt --in-place
           [ $? -eq 5 ] || { echo "::error::unknown token should exit 5"; exit 1; }
