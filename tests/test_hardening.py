@@ -196,3 +196,110 @@ def test_plain_padded_name_is_unchanged():
 
 def test_a_full_sixteen_character_name_has_no_padding_to_strip():
     assert t.entry_name(entry(b"ABCDEFGHIJKLMNOP")) == "ABCDEFGHIJKLMNOP"
+
+
+# --------------------------------------------------------------------------
+# 6. directory growth must trust the files, not the BAM
+#
+# From a second external review. 1.0.1 picked new directory sectors using
+# bam_is_free() alone. A BAM that marks a sector free while a file's chain
+# still runs through it made the tool allocate and zero that sector: exit 0,
+# no warning, file data gone. Reproduced against the shipped 1.0.1 binary.
+# --------------------------------------------------------------------------
+
+BIG_ART = "".join("ROW %02d\n" % i for i in range(40))      # forces chain growth
+
+
+def put_file_sector_on_track_18(d, name, sector):
+    """Extend `name`'s chain onto t18/`sector`, and have the BAM lie about it."""
+    e = [x for x in dr.read_directory(bytes(d)) if x.name == name][0]
+    first = t.offset(e.track, e.sector)
+    d[first], d[first + 1] = t.DIR_TRACK, sector
+    victim = t.offset(t.DIR_TRACK, sector)
+    d[victim:victim + 256] = b"\x00\xff" + b"REAL FILE DATA" + bytes(240)
+    b = t.offset(t.DIR_TRACK, 0) + 4 * t.DIR_TRACK
+    d[b + 1 + sector // 8] |= (1 << (sector % 8))           # "free", but it is not
+    return victim
+
+
+def test_a_file_sector_on_track_18_is_never_allocated(corrupt, art_file, run_tool):
+    victim = {}
+
+    def mutate(d):
+        victim["off"] = put_file_sector_on_track_18(d, "NOTE", 4)
+
+    disk = corrupt(mutate)
+    off = victim["off"]
+    before = disk.read_bytes()[off:off + 256]
+
+    run_tool(disk, "--from-text", art_file(BIG_ART), expect_ok=True)
+
+    assert disk.read_bytes()[off:off + 256] == before, \
+        "1.0.1 overwrote this file's data sector with directory entries"
+
+
+def test_the_art_still_lands_when_a_sector_is_skipped(corrupt, art_file, run_tool):
+    """Avoiding the occupied sector must not quietly drop rows."""
+    def mutate(d):
+        put_file_sector_on_track_18(d, "NOTE", 4)
+
+    disk = corrupt(mutate)
+    run_tool(disk, "--from-text", art_file(BIG_ART), expect_ok=True)
+    assert len([e for e in dr.read_directory(disk) if e.is_art]) == 40
+
+
+def test_the_user_is_told_a_file_is_squatting_on_track_18(corrupt, art_file, run_tool):
+    def mutate(d):
+        put_file_sector_on_track_18(d, "NOTE", 4)
+
+    disk = corrupt(mutate)
+    proc = run_tool(disk, "--from-text", art_file(BIG_ART), expect_ok=True)
+    assert "track 18" in proc.stdout and "NOTE" in proc.stdout
+
+
+def test_a_file_claiming_an_existing_directory_sector_is_refused(corrupt, art_file, run_tool):
+    """t18/s1 is the directory's own first sector. A file chain through it
+    means the disk contradicts itself, and stamping would zero it."""
+    def mutate(d):
+        put_file_sector_on_track_18(d, "NOTE", 1)
+
+    disk = corrupt(mutate)
+    before = disk.read_bytes()
+    proc = run_tool(disk, "--from-text", art_file(ART), expect_ok=False)
+    assert proc.returncode == 3
+    assert disk.read_bytes() == before
+
+
+def test_a_file_chain_that_loops_is_refused(corrupt, art_file, run_tool):
+    def mutate(d):
+        e = [x for x in dr.read_directory(bytes(d)) if x.name == "HRTRAINER"][0]
+        o = t.offset(e.track, e.sector)
+        d[o], d[o + 1] = e.track, e.sector            # points at itself
+
+    disk = corrupt(mutate)
+    before = disk.read_bytes()
+    proc = run_tool(disk, "--from-text", art_file(ART), expect_ok=False)
+    assert proc.returncode == 3
+    assert disk.read_bytes() == before
+
+
+def test_a_file_chain_pointing_off_the_disk_is_refused(corrupt, art_file, run_tool):
+    def mutate(d):
+        e = [x for x in dr.read_directory(bytes(d)) if x.name == "HRTRAINER"][0]
+        o = t.offset(e.track, e.sector)
+        d[o], d[o + 1] = 40, 0                        # track 40 on a 35-track disk
+
+    disk = corrupt(mutate)
+    before = disk.read_bytes()
+    proc = run_tool(disk, "--from-text", art_file(ART), expect_ok=False)
+    assert proc.returncode == 3
+    assert disk.read_bytes() == before
+
+
+def test_a_healthy_disk_is_unaffected_by_the_new_check(three_files, art_file, run_tool):
+    """The scan must not refuse or alter anything on a normal disk."""
+    proc = run_tool(three_files, "--from-text", art_file(BIG_ART), expect_ok=True)
+    assert "squatting" not in proc.stdout
+    assert len([e for e in dr.read_directory(three_files) if e.is_art]) == 40
+    assert sorted(e.name for e in dr.real_files(three_files)) == \
+        ["CRACKTRO", "HRTRAINER", "NOTE"]
