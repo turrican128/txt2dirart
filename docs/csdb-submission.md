@@ -1,4 +1,4 @@
-# CSDb submission — txt2dirart 1.0
+# CSDb submission — txt2dirart 1.0.1
 
 Everything needed to fill in the "Add release" form at
 <https://csdb.dk/additem.php?type=release>. Modelled on the png2prg 1.12
@@ -13,7 +13,7 @@ comparable tool release.
 
 | field | value |
 |---|---|
-| **Name** | `txt2dirart 1.0` |
+| **Name** | `txt2dirart 1.0.1` |
 | **Type** | `Other Platform C64 Tool` |
 | **Released by** | DR.J / Delysid |
 | **Release date** | the day you submit |
@@ -35,7 +35,10 @@ raises how the entry is received.
 
 Upload both, in this order:
 
-1. **`txt2dirart-1.0.zip`** — from the GitHub release. Contains
+1. **`txt2dirart-1.0.1.zip`** — from the GitHub release.
+   **Take it from the `v1.0.1` release, not `v1.0`.** 1.0 is still on the repo,
+   marked superseded: a corrupt directory chain could make it overwrite file data.
+   The v1.0.1 zip is the one to upload. Contains
    `txt2dirart.exe`, the Linux binary, the Python source, README, CHANGELOG,
    LICENSE, the art examples, `examples.d64` and `testdisk.d64` (a practice disk the
    examples run against out of the box).
@@ -72,7 +75,8 @@ Linux; the Python source is one file if you would rather vendor it into a
 build script.
 
 Only track 18 is ever written -- every file keeps its start sector and its
-length.
+length -- and a disk whose directory chain leaves track 18 is refused
+untouched rather than written to.
 
 Source, full documentation and the art-file format:
 https://github.com/turrican128/txt2dirart
@@ -82,10 +86,12 @@ https://github.com/turrican128/txt2dirart
 
 ## Before you submit — checklist
 
-- [ ] GitHub release `v1.0` exists and both CI workflows are green
+- [ ] You are uploading the **`v1.0.1`** zip, not the superseded `v1.0` one
+- [ ] GitHub release `v1.0.1` exists and its build was green on both platforms
 - [ ] Downloaded the zip from the release page and run **both** binaries once
       on a real machine, not just in CI
 - [ ] `examples.d64` attaches and `LIST`s correctly on hardware or in VICE
 - [ ] `LOAD"DEMO",8` + `RUN` works off that same disk
-- [ ] Repository is **public** and the README renders with both screenshots
+- [ ] An art example runs against the bundled `testdisk.d64` with no token renaming
+- [ ] Repository is **public** and the README renders with all three screenshots
 - [ ] Links in the README are not 404s
