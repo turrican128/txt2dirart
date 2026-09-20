@@ -356,9 +356,16 @@ than on the C64.
 nothing else, so a disk's free-block count can only stay the same or fall. If a
 disk lost its files, it did not lose them here.
 
+**A damaged directory is refused, not repaired.** Every sector in the directory
+chain gets rewritten, so the chain is only trusted while it stays on track 18,
+sectors 1-18. If a link points anywhere else -- at file data, at the BAM, at another
+track -- the tool stops with exit 3 and writes nothing. (1.0 did not check this;
+1.0.1 does.)
+
 ## Limitations
 
 - **35- and 40-track `.d64` only** (`174848`, `175531`, `196608`, `197376` bytes). No `.d71`, no `.d81`, no `.g64`.
+- **The directory must live on track 18.** The rare disk whose directory continues onto another track is refused rather than handled.
 - **Track 18 is the ceiling.** 18 usable sectors × 8 entries = **144 rows** absolute maximum, shared with your real files, and only if the rest of track 18 is free. You will hit a clean error long before you hit anything weird.
 - **It does not draw the art for you.** It takes the art you wrote and puts it on the disk. Authoring is DirMaster, a text editor, or your own head.
 - **It does not write files.** Master the disk first with `c1541` or whatever you already use, then stamp it.
