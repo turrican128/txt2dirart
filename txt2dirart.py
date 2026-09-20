@@ -12,8 +12,8 @@ here", so a listing can interleave art and files freely instead of being
 art-block-then-files. Any real file you do not name is appended at the end,
 so a typo in the art can never silently drop a file off the disk.
 
+    txt2dirart disk.d64 --from-text art.txt
     txt2dirart disk.d64 --from-text art.txt -o arted.d64
-    txt2dirart disk.d64 --from-text art.txt --in-place
     txt2dirart disk.d64 --from-d64 someones-art.d64 -o arted.d64
     txt2dirart disk.d64 --from-text art.txt --dry-run
 
@@ -444,9 +444,10 @@ def build_parser():
                      help="lift the art off another disk's listing")
     dest = p.add_mutually_exclusive_group()
     dest.add_argument("-o", "--out", metavar="OUT.D64",
-                      help="write the result here")
+                      help="write the result to a new file instead of the input")
     dest.add_argument("--in-place", action="store_true",
-                      help="overwrite the input image")
+                      help="overwrite the input image (this is the default; the "
+                           "flag exists so a build script can say so explicitly)")
     p.add_argument("--file-first", action="store_true",
                    help="put the real files above the art (default: art first)")
     p.add_argument("--dry-run", action="store_true",
@@ -482,10 +483,10 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     log = (lambda *a, **k: None) if args.quiet else print
 
-    if not args.dry_run and not args.out and not args.in_place:
-        build_parser().error(
-            "refusing to guess where to write: pass -o OUT.D64, or --in-place "
-            "to overwrite the input")
+    # Stamping the disk you named is the default; -o writes elsewhere instead.
+    # In-place is safe to default to because only track 18 is ever rewritten:
+    # every file keeps its start sector and its length, so the worst outcome
+    # is a listing you do not like, and that is fixed by stamping again.
 
     try:
         with open(args.d64, "rb") as fh:
