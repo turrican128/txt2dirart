@@ -89,6 +89,8 @@ The whole tool is one file. You can vendor it into your project and forget about
 
 ## Quick start
 
+The download includes **`testdisk.d64`**, a clean practice disk holding three small programs — `CRACKTRO`, `HRTRAINER` and `NOTE` — which are the files the examples in `art-examples/` place. Everything below can be tried on it first; use `-o` while you experiment so it stays clean.
+
 Write an art file:
 
 ```
@@ -172,7 +174,7 @@ gives
 
 Notes:
 
-- **A token names a file on the disk you are stamping.** Art written for one disk will not run against another without renaming its tokens — that is the single most common thing to trip over, including with the files in `art-examples/`, whose tokens name files on the test disk.
+- **A token names a file on the disk you are stamping.** Art written for one disk will not run against another without renaming its tokens — that is the single most common thing to trip over, including with the files in `art-examples/`, whose tokens name the files on the included `testdisk.d64`.
 - Tokens are **case-insensitive**. `@cracktro`, `@CRACKTRO` and `@CrAcKtRo` are the same.
 - A token naming a file that is not on the disk is an **error**, and **every** bad token is reported at once, together with what *is* on the disk:
 

@@ -6,7 +6,8 @@ what the tool does: attach it, LIST it, and the directory itself is the
 demonstration. LOAD"DEMO",8 and RUN proves the files still work.
 
     python tools/make_examples.py                 # stamp the committed base
-    python tools/make_examples.py --rebuild-base  # re-master it (needs c1541)
+    python tools/make_examples.py --rebuild-base  # re-master it, and the
+                                                  # practice disk (needs c1541)
 
 Two stages, deliberately split:
 
@@ -68,6 +69,10 @@ def tokenize_line(number, text):
             out.append(ord('"'))
             i += 1
             continue
+        if not in_quotes and text[i:i + 3].upper() == "REM":
+            out.append(0x8F)                 # REM: the rest of the line is inert
+            out += text[i + 3:].upper().encode("ascii")
+            break
         if not in_quotes and ch in TOKENS:
             out.append(TOKENS[ch])
             i += 1
@@ -113,6 +118,57 @@ def find_c1541(explicit=None):
     return found
 
 
+# ---------------------------------------------------------------------------
+# testdisk.d64 -- the practice disk that ships in the zip
+#
+# The art examples place files with @cracktro and @hrtrainer, so the download
+# needs a disk that HAS those files, or the two most interesting examples fail
+# on first contact. The files are small real BASIC programs, not junk bytes:
+# someone will LOAD and RUN them. They are padded with REM lines to 3, 6 and 1
+# blocks so the sample output in the README matches what a user actually sees.
+# ---------------------------------------------------------------------------
+
+PRACTICE = ROOT / "testdisk.d64"
+PRACTICE_NAME = "txt2dirart demo,dj"
+PRACTICE_FILES = [("cracktro", 3), ("hrtrainer", 6), ("note", 1)]
+
+
+def blocks_of(prg):
+    return (len(prg) + 253) // 254          # 254 data bytes per 1541 block
+
+
+def practice_prg(name, blocks):
+    """A runnable BASIC program occupying exactly `blocks` disk blocks."""
+    lines = [
+        (10, '?"{}' + name.upper() + '"'),
+        (20, '?"A PRACTICE FILE FOR TXT2DIRART."'),
+        (30, '?"DIR ART NEVER TOUCHES FILE DATA,"'),
+        (40, '?"SO THIS STILL LOADS AND RUNS."'),
+    ]
+    if blocks == 1:
+        lines = lines[:2]
+    number = 1000
+    while blocks_of(build_basic(lines)) < blocks:
+        lines.append((number, "REM " + "-" * 30))
+        number += 10
+    prg = build_basic(lines)
+    if blocks_of(prg) != blocks:
+        sys.exit(f"!! {name}: came out {blocks_of(prg)} blocks, wanted {blocks}")
+    return prg
+
+
+def rebuild_practice(c1541, dest):
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        cmd = [c1541, "-format", PRACTICE_NAME, "d64", str(dest)]
+        for name, blocks in PRACTICE_FILES:
+            f = tmp / f"{name}.prg"
+            f.write_bytes(practice_prg(name, blocks))
+            cmd += ["-write", str(f), name]
+        subprocess.run(cmd, check=True, capture_output=True)
+    print(f"[*] mastered {dest.name}  {dest.stat().st_size} B")
+
+
 BASE = ROOT / "tools" / "examples-base.d64"
 ART = ROOT / "tools" / "examples-disk-art.txt"
 
@@ -144,7 +200,9 @@ def main():
     args = ap.parse_args()
 
     if args.rebuild_base:
-        rebuild_base(find_c1541(args.c1541), BASE)
+        c1541 = find_c1541(args.c1541)
+        rebuild_base(c1541, BASE)
+        rebuild_practice(c1541, PRACTICE)
 
     if not BASE.exists():
         sys.exit(f"!! {BASE} is missing -- run with --rebuild-base (needs c1541)")

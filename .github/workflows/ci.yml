@@ -65,6 +65,23 @@ jobs:
           cmp committed.d64 examples.d64 \
             || { echo "::error::examples.d64 is stale -- run tools/make_examples.py"; exit 1; }
 
+      - name: the shipped practice disk is pristine
+        # The plain command stamps in place, so it takes one careless run of
+        # an example against testdisk.d64 to commit a disk covered in art --
+        # and that disk ships in the zip. It must hold exactly the three
+        # practice files, at the sizes the README shows, and no art at all.
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path[:0] = ["tests", "."]
+          import d64reader as dr
+          entries = dr.read_directory("testdisk.d64")
+          got = [(e.name, e.blocks) for e in entries]
+          assert got == [("CRACKTRO", 3), ("HRTRAINER", 6), ("NOTE", 1)], got
+          assert not any(e.is_art for e in entries), "testdisk.d64 has art on it"
+          print("practice disk OK:", got)
+          PY
+
       - name: the base disk still holds both demo programs
         # Guards against someone committing a base disk that lost a file.
         run: |
