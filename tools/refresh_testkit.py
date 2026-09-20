@@ -74,8 +74,9 @@ def smoke(exe):
         ([str(exe), str(tmp), "--from-text",
           str(ROOT / "art-examples" / "02-interleaved.txt"), "--in-place"], 0),
         ([str(exe), str(tmp), "--from-text", str(bad), "--in-place"], 5),
+        # the plain form, no destination flag: stamps the named disk
         ([str(exe), str(tmp), "--from-text",
-          str(ROOT / "art-examples" / "01-simple-frame.txt")], 2),
+          str(ROOT / "art-examples" / "01-simple-frame.txt")], 0),
     ]
     for cmd, want in checks:
         got = subprocess.run(cmd, capture_output=True, text=True).returncode
