@@ -38,3 +38,8 @@ First public release.
 - Release binaries are stripped and exclude unused stdlib modules: the Windows
   build drops from 8.0 MB to 5.0 MB.
 - Tags with a suffix (`v0.9.0-rc1`) publish as prereleases.
+- Warns when the image does not look like a formatted 1541 disk (no `2A` DOS
+  type, wrong DOS version, BAM not pointing at t18/s1) and when it holds no
+  files at all. Warnings, not refusals: art-only disks are a real use. Found
+  by Alex pointing the tool at a blank image and reading "0 real file(s) kept"
+  as the tool having done nothing.

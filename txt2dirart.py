@@ -322,6 +322,29 @@ def place(art, real, log=print):
 # BAM
 # --------------------------------------------------------------------------
 
+def format_warnings(d):
+    """Reasons to doubt this image was ever formatted by a 1541.
+
+    A .d64 is just 174848 bytes; anything can produce one. A blank image
+    walks its directory chain perfectly well and reports no files, which
+    reads as "the tool did nothing" rather than "this disk is empty".
+    These are warnings and not refusals -- stamping art onto a blank disk
+    is a legitimate thing to want -- but they should be said out loud.
+    """
+    bam = offset(DIR_TRACK, 0)
+    out = []
+    if bytes(d[bam + 0xA5:bam + 0xA7]) != b"2A":
+        got = bytes(d[bam + 0xA5:bam + 0xA7])
+        out.append(f"DOS type is {got!r}, not b'2A' -- this image does not look "
+                   f"like it was ever formatted")
+    if d[bam + 2] != 0x41:
+        out.append(f"DOS version byte is ${d[bam + 2]:02X}, not $41 ('A')")
+    if (d[bam], d[bam + 1]) != (DIR_TRACK, 1):
+        out.append(f"the BAM points its first directory sector at "
+                   f"t{d[bam]}/s{d[bam + 1]}, not t{DIR_TRACK}/s1")
+    return out
+
+
 def bam_free(d, track):
     return d[offset(DIR_TRACK, 0) + 4 * track]
 
@@ -347,12 +370,18 @@ def stamp(data, art, file_first=False, log=print):
     d = bytearray(data)
     track_count(d)
 
+    for problem in format_warnings(d):
+        log(f"[!] {problem}")
+
     chain, live = read_chain(d)
     real = [e for e in live if not is_art_entry(e)]
     tokens = [x for x in art if isinstance(x, str)]
 
     log(f"[*] {len(real)} real file(s) kept, {len(art) - len(tokens)} art rows"
         + (f", {len(tokens)} placement token(s)" if tokens else ""))
+    if not real:
+        log("[!] this disk holds no files at all -- the listing will be art "
+            "and nothing else")
     for e in real:
         n = e[30] + e[31] * 256
         log(f"    keeping {entry_name(e)!r} ({n} block{'' if n == 1 else 's'})")
