@@ -208,7 +208,7 @@ def test_the_offending_line_number_is_reported(three_files, art_file, run_tool):
 def test_token_naming_no_such_file_is_refused(three_files, art_file, run_tool):
     proc = run_tool(three_files, "--from-text",
                     art_file("@nosuchfile\n"), "--in-place", expect_ok=False)
-    assert "matches no file" in (proc.stdout + proc.stderr)
+    assert "match no file" in (proc.stdout + proc.stderr)
     assert "CRACKTRO" in (proc.stdout + proc.stderr), "should list what IS on the disk"
     assert proc.returncode == 5, "unknown token -> exit 5"
 
@@ -274,3 +274,84 @@ def test_restamping_with_different_art_does_not_keep_the_old(three_files, art_fi
 
     art_rows = [e.name_exact for e in dr.read_directory(three_files) if e.is_art]
     assert art_rows == [b"****************"]
+
+
+# --------------------------------------------------------------------------
+# every bad @token is reported at once
+#
+# Found by Alex on a real disk: art written for one disk, pointed at another.
+# Reporting only the first bad name costs one run per mistake.
+# --------------------------------------------------------------------------
+
+def test_all_missing_tokens_are_reported_in_one_run(three_files, art_file, run_tool):
+    art = art_file("@nope1\n----------------\n@nope2\n@nope3\n")
+    proc = run_tool(three_files, "--from-text", art, "--in-place", expect_ok=False)
+    out = proc.stdout + proc.stderr
+
+    for name in ("@NOPE1", "@NOPE2", "@NOPE3"):
+        assert name in out, f"{name} missing from the error"
+    assert "3 token(s)" in out
+    assert proc.returncode == 5
+
+
+def test_the_error_lists_what_is_actually_on_the_disk(three_files, art_file, run_tool):
+    proc = run_tool(three_files, "--from-text", art_file("@nope\n"),
+                    "--in-place", expect_ok=False)
+    out = proc.stdout + proc.stderr
+    for name in ("CRACKTRO", "HRTRAINER", "NOTE"):
+        assert name in out, "the fix is knowing which names ARE valid"
+
+
+def test_a_duplicate_token_is_reported_not_silently_dropped(three_files, art_file, run_tool):
+    """Two @cracktro lines, one CRACKTRO on the disk."""
+    art = art_file("@cracktro\n----------------\n@cracktro\n")
+    proc = run_tool(three_files, "--from-text", art, "--in-place", expect_ok=False)
+    out = proc.stdout + proc.stderr
+    assert "more times in the art" in out
+    assert proc.returncode == 5
+
+
+def test_a_repeated_name_is_not_confused_with_a_missing_one(three_files, art_file, run_tool):
+    """@cracktro twice is a duplicate, not an unknown name."""
+    proc = run_tool(three_files, "--from-text",
+                    art_file("@cracktro\n@cracktro\n"), "--in-place", expect_ok=False)
+    out = proc.stdout + proc.stderr
+    assert "match no file" not in out, "CRACKTRO exists; this is a count problem"
+
+
+def test_a_mix_of_missing_and_duplicated_reports_both(three_files, art_file, run_tool):
+    art = art_file("@cracktro\n@cracktro\n@nosuch\n")
+    proc = run_tool(three_files, "--from-text", art, "--in-place", expect_ok=False)
+    out = proc.stdout + proc.stderr
+    assert "@NOSUCH" in out
+    assert "more times in the art" in out
+
+
+def test_the_error_says_tokens_are_disk_specific(three_files, art_file, run_tool):
+    """The actual fix is renaming the tokens, so the message should say so."""
+    proc = run_tool(three_files, "--from-text", art_file("@nope\n"),
+                    "--in-place", expect_ok=False)
+    assert "THIS disk" in (proc.stdout + proc.stderr)
+
+
+def test_progress_output_survives_a_token_failure(three_files, art_file, run_tool):
+    """The context lines explain what the tool was doing when it stopped."""
+    proc = run_tool(three_files, "--from-text", art_file("@nope\n"),
+                    "--in-place", expect_ok=False)
+    assert "real file(s) kept" in proc.stdout
+
+
+def test_a_token_failure_still_writes_nothing(three_files, art_file, run_tool):
+    before = three_files.read_bytes()
+    run_tool(three_files, "--from-text", art_file("@nope1\n@nope2\n"),
+             "--in-place", expect_ok=False)
+    assert three_files.read_bytes() == before, "a refusal must not touch the disk"
+
+
+def test_valid_tokens_still_place_correctly(three_files, art_file, run_tool):
+    """The validation pass must not break the happy path."""
+    run_tool(three_files, "--from-text",
+             art_file("----\n@cracktro\n----\n@note\n"), "--in-place", expect_ok=True)
+    entries = dr.read_directory(three_files)
+    kinds = [("art" if e.is_art else e.name) for e in entries]
+    assert kinds == ["art", "CRACKTRO", "art", "NOTE", "HRTRAINER"]

@@ -256,8 +256,50 @@ def art_from_d64(path):
 # placement
 # --------------------------------------------------------------------------
 
+def check_tokens(art, real):
+    """Validate every @token before placing anything.
+
+    Reporting only the first bad token turns fixing an art file into one
+    round trip per mistake: run, fix one name, run again, find the next.
+    An art file written for one disk and pointed at another is the normal
+    case -- the tokens name files, and a different disk has different
+    files -- so every wrong name is reported together.
+    """
+    available = [entry_name(e) for e in real]
+    remaining = list(available)
+    missing, exhausted = [], []
+    for item in art:
+        if not isinstance(item, str):
+            continue
+        want = item[1:]
+        if want in remaining:
+            remaining.remove(want)
+        elif want in available:
+            exhausted.append(want)          # named more times than it exists
+        else:
+            missing.append(want)
+
+    if not missing and not exhausted:
+        return
+
+    have = ", ".join(available) or "no files at all"
+    lines = []
+    if missing:
+        names = ", ".join("@" + m for m in dict.fromkeys(missing))
+        lines.append(f"{len(dict.fromkeys(missing))} token(s) match no file "
+                     f"on the disk: {names}")
+    for want in dict.fromkeys(exhausted):
+        lines.append(f"@{want} appears more times in the art than the disk has "
+                     f"copies of {want}")
+    lines.append(f"the disk contains: {have}")
+    lines.append("a token names a file on THIS disk, so art written for another "
+                 "disk needs its tokens renamed")
+    raise TokenNotFound("\n   ".join(lines))
+
+
 def place(art, real, log=print):
     """Interleave the real files into the art according to '@name' tokens."""
+    check_tokens(art, real)
     pool = list(real)
     entries = []
     for item in art:
@@ -265,11 +307,7 @@ def place(art, real, log=print):
             entries.append(item)
             continue
         want = item[1:]
-        match = next((e for e in pool if entry_name(e) == want), None)
-        if match is None:
-            have = ", ".join(entry_name(e) for e in pool) or "nothing"
-            raise TokenNotFound(
-                f"@{want} matches no file on the disk (disk has: {have})")
+        match = next(e for e in pool if entry_name(e) == want)
         pool.remove(match)
         entries.append(match)
         log(f"    placed  {want!r} where @{want} appears")
@@ -447,6 +485,10 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except DirArtError as exc:
+        # stdout is block-buffered when piped and stderr is not, so without
+        # this flush the error jumps ahead of the progress lines that explain
+        # what the tool was doing when it hit the problem.
+        sys.stdout.flush()
         print(f"!! {exc}", file=sys.stderr)
         sys.exit(exc.code)
     except KeyboardInterrupt:
