@@ -41,8 +41,15 @@ jobs:
         # The tool imports argparse, os and sys. Nothing else. Left to itself
         # PyInstaller still bundles most of the stdlib, which put the Linux
         # binary at 16.5 MB for a 500-line script -- eight times the size of
-        # the whole png2prg download. Stripping symbols and excluding the
-        # modules we provably never import takes it to about a third of that.
+        # the whole png2prg download. Excluding the modules we provably never
+        # import takes it to about a third of that.
+        #
+        # No --strip. It corrupts the bundled python311.dll on Windows --
+        # the binary builds cleanly and then dies with "Failed to load Python
+        # DLL / LoadLibrary: Invalid access to memory location" (exit 127),
+        # which is how v0.9.0-rc2 failed. It is worth nothing anyway: stripping
+        # saved 53 KB of 5.3 MB, about 1%. Every byte of the real reduction
+        # comes from the exclusions below.
         #
         # An over-aggressive exclude list produces a binary that builds fine
         # and dies at startup, which is why the smoke test below is not
@@ -50,7 +57,7 @@ jobs:
         # this list.
         run: >
           pyinstaller --onefile --name txt2dirart
-          --console --noupx --strip
+          --console --noupx
           --exclude-module tkinter --exclude-module unittest
           --exclude-module email --exclude-module http
           --exclude-module xml --exclude-module xmlrpc
