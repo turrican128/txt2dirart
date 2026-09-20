@@ -31,7 +31,7 @@ KIT = ROOT.parent / "txt2dirart-TESTKIT"
 # guide's examples assume the three files and nothing else.
 OURS = {
     "examples.d64": "examples.d64",
-    "testdisk.d64": "tests/fixtures/three_files.d64",
+    "testdisk.d64": "testdisk.d64",          # the practice disk that ships in the zip
 }
 
 EXCLUDES = [

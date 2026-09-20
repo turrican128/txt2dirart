@@ -37,7 +37,8 @@ Upload both, in this order:
 
 1. **`txt2dirart-1.0.zip`** — from the GitHub release. Contains
    `txt2dirart.exe`, the Linux binary, the Python source, README, CHANGELOG,
-   LICENSE, the art examples and `examples.d64`.
+   LICENSE, the art examples, `examples.d64` and `testdisk.d64` (a practice disk the
+   examples run against out of the box).
 2. **`examples.d64`** — as its own download. On the png2prg entry roughly a
    third of the people who took the tool also took the examples disk, and for
    this tool it is the best possible demo: attach it, `LIST`, and the

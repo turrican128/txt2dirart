@@ -134,6 +134,10 @@ jobs:
           # The README embeds these; without them its images are dead offline.
           cp docs/*.png "$DIR/docs/"
           cp examples.d64 "$DIR/"
+          # The practice disk: the only disk in the download that holds the files
+          # the art examples' @tokens name. Without it examples 02 and 03 fail on
+          # first contact.
+          cp testdisk.d64 "$DIR/"
           zip -r -q "${DIR}.zip" "$DIR"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "ZIP=${DIR}.zip"   >> "$GITHUB_ENV"
@@ -142,7 +146,7 @@ jobs:
           # build. rc3 shipped without art-examples/README.md and nothing
           # noticed until the listing was read by eye.
           required="txt2dirart txt2dirart.exe txt2dirart.py README.md CHANGELOG.md LICENSE"
-          required="$required examples.d64 art-examples/README.md"
+          required="$required examples.d64 testdisk.d64 art-examples/README.md"
           required="$required art-examples/01-simple-frame.txt art-examples/03-petscii-escapes.txt"
           required="$required docs/listing-on-a-c64.png docs/petscii-frame-on-a-c64.png"
           listing=$(unzip -Z1 "${DIR}.zip")

@@ -46,5 +46,7 @@ First public release.
 - `txt2dirart.py`, the whole tool in one dependency-free file (Python 3.9+), if
   you would rather vendor it into a build script.
 - `art-examples/` with four working art files and notes on adapting them.
+- `testdisk.d64`, a clean practice disk holding the files the examples place,
+  so every example runs out of the box.
 - `examples.d64`: attach it and `LIST` -- the directory is the demonstration,
   and `LOAD"DEMO",8` then `RUN` shows the files still load.

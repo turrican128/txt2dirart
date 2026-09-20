@@ -1,10 +1,26 @@
 # Art examples
 
-Four working art files. Copy one, edit it, point it at your disk.
+Four working art files. Try them on the practice disk, then copy one, edit it,
+and point it at your own.
 
-## Read this before you run them
+## Start with the practice disk
 
-**The `@tokens` in these files name files on MY test disk, not yours.**
+The download includes **`testdisk.d64`**, a clean disk holding three small
+programs: `CRACKTRO`, `HRTRAINER` and `NOTE`. Every example here works on it
+as-is:
+
+```
+txt2dirart testdisk.d64 --from-text art-examples/02-interleaved.txt --dry-run
+txt2dirart testdisk.d64 --from-text art-examples/02-interleaved.txt -o mine.d64
+```
+
+Attach `mine.d64` in an emulator, `LOAD"$",8` and `LIST` to see the art, then
+`LOAD"HRTRAINER",8` and `RUN` to see that the files still work.
+
+Use `-o` while you experiment. Without it the tool stamps the disk you named,
+and the practice disk stops being clean.
+
+## Then your own disk: rename the tokens
 
 `02-interleaved.txt` and `03-petscii-escapes.txt` contain lines like:
 
@@ -14,9 +30,9 @@ Four working art files. Copy one, edit it, point it at your disk.
 ```
 
 A `@token` means "put the real file with this name here", so it only works on a
-disk that actually has a file called `CRACKTRO`. Point one of these at your own
-disk and the tool will stop and tell you which names it could not find, and what
-your disk holds instead:
+disk that actually has a file called `CRACKTRO`. The practice disk does. Yours
+almost certainly does not, and the tool will stop and tell you every name it
+could not find, and what your disk holds instead:
 
 ```
 !! 2 token(s) match no file on the disk: @CRACKTRO, @HRTRAINER
@@ -52,5 +68,6 @@ work on any disk as-is.
 - Lowercase is uppercased. `\xNN` escapes are not.
 - A blank line is a full-width blank row; blank lines at the end are dropped.
 - `\xNN` counts as one character against the 16, not four.
+- Art already on the disk is replaced, not added to.
 
 The full format is in the main [README](../README.md).
