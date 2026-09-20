@@ -309,6 +309,28 @@ Only **track 18** is ever written. Everything else in the image — every file's
 5. Rewrite every sector in the chain, fixing the link bytes — including the two that overlap entry 0's first two bytes.
 6. Write to a temp file and `os.replace` it into position, so an interrupted run cannot leave a half-written disk image.
 
+## When the disk does not look right
+
+A `.d64` is 174848 bytes and anything can produce one. An image that was never
+formatted walks its directory chain perfectly well and reports no files, which
+reads like the tool did nothing rather than like the disk is empty. So it says
+so:
+
+```
+[!] DOS type is b'  ', not b'2A' -- this image does not look like it was
+    ever formatted
+[*] 0 real file(s) kept, 3 art rows
+[!] this disk holds no files at all -- the listing will be art and nothing else
+```
+
+These are warnings, not refusals. Stamping art onto a blank disk is a
+legitimate thing to want. But if you did not mean to, you find out now rather
+than on the C64.
+
+**The tool never frees a block.** It allocates directory sectors on track 18 and
+nothing else, so a disk's free-block count can only stay the same or fall. If a
+disk lost its files, it did not lose them here.
+
 ## Limitations
 
 - **35- and 40-track `.d64` only** (`174848`, `175531`, `196608`, `197376` bytes). No `.d71`, no `.d81`, no `.g64`.
