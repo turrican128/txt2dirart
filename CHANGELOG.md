@@ -43,3 +43,7 @@ First public release.
   files at all. Warnings, not refusals: art-only disks are a real use. Found
   by Alex pointing the tool at a blank image and reading "0 real file(s) kept"
   as the tool having done nothing.
+- `art-examples/03-petscii-escapes.txt` now draws a rounded PETSCII frame
+  instead of rows of invisible shifted-space, and the README documents the six
+  frame codes, verified on a real C64. Alex's idea, after building one for his
+  own disk.

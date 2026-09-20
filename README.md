@@ -190,11 +190,32 @@ Notes:
 
 Dir art is built from PETSCII graphics characters — bars, corners, blocks — and your text editor cannot type most of them.
 
-`\xNN` writes PETSCII byte `NN` directly:
+`\xNN` writes PETSCII byte `NN` directly. This is `art-examples/03-petscii-escapes.txt`, a rounded frame:
 
 ```
-\xa0\xa0 DR.J/DELYSID
+\xd5\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc9
+\xdd THE C64 WILL \xdd
+\xdd  NEVER DIE.  \xdd
+\xdd IT JUST TAKES\xdd
+\xdd AGES TO LOAD.\xdd
+\xca\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xc0\xcb
+@cracktro
 ```
+
+which lists on the machine as a box with the file sitting under it:
+
+![A PETSCII frame drawn with escapes, listed on a C64](docs/petscii-frame-on-a-c64.png)
+
+The six codes a frame needs, checked on a real C64 rather than copied from a chart:
+
+| code | glyph | C64 key |
+|---|---|---|
+| `\xd5` `\xc9` | top corners ╭ ╮ | shift-U, shift-I |
+| `\xca` `\xcb` | bottom corners ╰ ╯ | shift-J, shift-K |
+| `\xc0` | horizontal line ─ | shift-* |
+| `\xdd` | vertical line │ | shift-minus |
+
+A real file cannot sit *inside* the box: its name is padded by the drive, so it has no side walls. Put `@tokens` above or below the frame.
 
 - `\xNN` counts as **one character** against the 16-wide limit, not four. Sixteen escapes is a full row.
 - Escaped bytes are **not uppercased**. `\x61` stays `$61`; a literal `a` becomes `A`.
