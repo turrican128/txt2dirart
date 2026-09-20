@@ -111,6 +111,8 @@ $ txt2dirart game.d64 --from-text art.txt
 
 `game.d64` now lists your art above the files.
 
+**Directory art already on the disk is replaced, not added to** — separators made in DirMaster or any other tool included. Every `DEL` entry that owns no blocks counts as art: the tool removes them all and writes yours. Your real files are always kept. This is what makes stamping repeatable: edit the text file, stamp again, and the disk matches the file instead of collecting a second copy of the art.
+
 To leave the original alone and write a new disk instead:
 
 ```
