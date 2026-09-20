@@ -11,6 +11,8 @@ What it touches:  txt2dirart.exe, art-examples/, examples.d64, BUILD-INFO.txt
 What it never touches: any .d64 in the kit that this repo did not put there.
 His own test disks live in that folder and are his.
 """
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -42,6 +44,44 @@ EXCLUDES = [
 
 def sh(*args, **kw):
     return subprocess.run(args, capture_output=True, text=True, **kw)
+
+
+MANIFEST = ".kit-manifest.json"
+
+
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def load_manifest():
+    try:
+        return json.loads((KIT / MANIFEST).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def copy_example(src, dst, manifest, kept):
+    """Copy one shipped example into the kit without eating Alex's edits.
+
+    He edits the examples while testing. The manifest records the hash of
+    what this script last wrote; if the file in the kit no longer matches
+    it, he changed it, and his version is set aside as NAME.yours.EXT
+    before the new one lands. With no manifest entry (first run), any file
+    that differs from the incoming copy is treated as his, to be safe.
+    """
+    rel = "art-examples/" + dst.name
+    if dst.exists():
+        current = digest(dst)
+        last_written = manifest.get(rel)
+        edited = (current != last_written) if last_written else (current != digest(src))
+        if edited and current != digest(src):
+            backup = dst.with_name(dst.stem + ".yours" + dst.suffix)
+            if backup.exists():
+                backup = dst.with_name(dst.stem + time.strftime(".yours-%H%M%S") + dst.suffix)
+            shutil.copy(dst, backup)
+            kept.append(f"{dst.name} -> {backup.name}")
+    shutil.copy(src, dst)
+    manifest[rel] = digest(dst)
 
 
 def build():
@@ -129,9 +169,11 @@ def main():
 
     shutil.copy(exe, KIT / exe.name)
     (KIT / "art-examples").mkdir(exist_ok=True)
-    for f in (ROOT / "art-examples").iterdir():
+    manifest, kept = load_manifest(), []
+    for f in sorted((ROOT / "art-examples").iterdir()):
         if f.is_file():
-            shutil.copy(f, KIT / "art-examples" / f.name)
+            copy_example(f, KIT / "art-examples" / f.name, manifest, kept)
+    (KIT / MANIFEST).write_text(json.dumps(manifest, indent=1), encoding="utf-8")
     for name, source in OURS.items():
         if (ROOT / source).exists():
             shutil.copy(ROOT / source, KIT / name)
@@ -147,6 +189,8 @@ def main():
 
     print(f"[*] test kit refreshed: {KIT}")
     print(f"    {exe.name}  {(KIT / exe.name).stat().st_size} bytes  ({branch} @ {sha})")
+    for line in kept:
+        print("    your edit kept: " + line)
     theirs = sorted(p.name for p in KIT.glob("*.d64") if p.name not in OURS)
     if theirs:
         print("    left alone: " + ", ".join(theirs))
