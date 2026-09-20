@@ -1,4 +1,4 @@
-# CSDb submission — txt2dirart 1.0.1
+# CSDb submission — txt2dirart 1.0.2
 
 Everything needed to fill in the "Add release" form at
 <https://csdb.dk/additem.php?type=release>. Modelled on the png2prg 1.12
@@ -13,7 +13,7 @@ comparable tool release.
 
 | field | value |
 |---|---|
-| **Name** | `txt2dirart 1.0.1` |
+| **Name** | `txt2dirart 1.0.2` |
 | **Type** | `Other Platform C64 Tool` |
 | **Released by** | DR.J / Delysid |
 | **Release date** | the day you submit |
@@ -35,10 +35,10 @@ raises how the entry is received.
 
 Upload both, in this order:
 
-1. **`txt2dirart-1.0.1.zip`** — from the GitHub release.
-   **Take it from the `v1.0.1` release, not `v1.0`.** 1.0 is still on the repo,
-   marked superseded: a corrupt directory chain could make it overwrite file data.
-   The v1.0.1 zip is the one to upload. Contains
+1. **`txt2dirart-1.0.2.zip`** — from the GitHub release.
+   **Take it from the `v1.0.2` release.** 1.0 and 1.0.1 are still on the repo,
+   both marked superseded: each can destroy file data on a damaged or unusual
+   disk. The v1.0.2 zip is the one to upload. Contains
    `txt2dirart.exe`, the Linux binary, the Python source, README, CHANGELOG,
    LICENSE, the art examples, `examples.d64` and `testdisk.d64` (a practice disk the
    examples run against out of the box).
@@ -86,8 +86,8 @@ https://github.com/turrican128/txt2dirart
 
 ## Before you submit — checklist
 
-- [ ] You are uploading the **`v1.0.1`** zip, not the superseded `v1.0` one
-- [ ] GitHub release `v1.0.1` exists and its build was green on both platforms
+- [ ] You are uploading the **`v1.0.2`** zip, not the superseded `v1.0` / `v1.0.1` ones
+- [ ] GitHub release `v1.0.2` exists and its build was green on both platforms
 - [ ] Downloaded the zip from the release page and run **both** binaries once
       on a real machine, not just in CI
 - [ ] `examples.d64` attaches and `LIST`s correctly on hardware or in VICE
